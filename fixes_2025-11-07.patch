@@ -1,0 +1,158 @@
+*** a/gold_bot_full_v7_adaptive_multistrat.py
+--- b/gold_bot_full_v7_adaptive_multistrat.py
+@@
+-def adapt_parameters_from_stats(stats: dict):
+-    """Small, safe automatic nudges based on recent performance."""
+-    global BE_TRIGGER_R, LOCK_AT_R
+-    try:
+-        ov = stats.get("overall", {})
+-        n   = int(ov.get("n", 0))
+-        if n < LEARN_MIN_TRADES:
+-            return
+-        be_rate = float(ov.get("be_rate", 0.0))
+-        giveback = float(ov.get("giveback_med", 0.0))  # in R
+-        changed = []
+-
+-        # 1) Too many flat exits → protect earlier
+-        if be_rate >= 0.35:
+-            new_be = max(0.25, BE_TRIGGER_R - NUDGE_BE_TRIGGER_STEP)
+-            if abs(new_be - BE_TRIGGER_R) >= 1e-9:
+-                BE_TRIGGER_R = new_be
+-                changed.append(f"BE_TRIGGER_R->{BE_TRIGGER_R:.2f}")
+-
+-        # 2) Large givebacks on winners → lock earlier
+-        if giveback >= 0.60:
+-            new_lock = max(0.60, LOCK_AT_R - NUDGE_LOCK_AT_STEP)
+-            if abs(new_lock - LOCK_AT_R) >= 1e-9:
+-                LOCK_AT_R = new_lock
+-                changed.append(f"LOCK_AT_R->{LOCK_AT_R:.2f}")
+-
+-        # 3) Strategy reorder by expectancy (optional)
+-        if STRAT_REORDER_ENABLE:
+-            exp = {k: v.get("expR", -999) for k, v in stats.items() if k in ("BRRT","ORB","FVG")}
+-            if exp:
+-                order = [k for k,_ in sorted(exp.items(), key=lambda kv: kv[1], reverse=True)]
+-                enabled = [s for s in STRATEGIES_ENABLED if s in order]
+-                tail = [s for s in STRATEGIES_ENABLED if s not in order]
+-                new_enabled = enabled + tail
+-                if new_enabled != STRATEGIES_ENABLED:
+-                    STRATEGIES_ENABLED[:] = new_enabled
+-                    changed.append(f"STRAT_ORDER->{','.join(STRATEGIES_ENABLED)}")
+-
+-        if changed:
+-            print("🧠 Adapt:", " | ".join(changed))
+-
+-        # Print false-positive fingerprints (human friendly)
+-        fp = stats.get("fingerprints", {})
+-        over = fp.get("overrep_flags", {})
+-        med = fp.get("medians", {})
+-        print("🔎 False-Positive clues:",
+-              f"weak_atrΔ={over.get('weak_atr',0.0):+.2f} weak_bodyΔ={over.get('weak_body',0.0):+.2f} flat_trendΔ={over.get('flat_trend',0.0):+.2f} | ",
+-              f"atr_rel med(loss-win)={med.get('atr_rel_delta_med', float('nan')):+.2f} body_rel med(loss-win)={med.get('body_rel_delta_med', float('nan')):+.2f}")
+-
+-    except Exception as e:
+-        if DEBUG:
+-            print(f"⚠️ adapt_parameters_from_stats error: {e}")
++def adapt_parameters_from_stats(stats: dict):
++    """
++    Small, safe automatic nudges based on recent performance.
++    """
++    global BE_TRIGGER_R, LOCK_AT_R
++    try:
++        ov = stats.get("overall", {})
++        n = int(ov.get("n", 0))
++        if n < LEARN_MIN_TRADES:
++            return
++        be_rate = float(ov.get("be_rate", 0.0))
++        giveback = float(ov.get("giveback_med", 0.0))  # in R
++        changed = []
++
++        # 1) Too many flat exits → protect earlier
++        if be_rate >= 0.35:
++            new_be = max(0.25, BE_TRIGGER_R - NUDGE_BE_TRIGGER_STEP)
++            if abs(new_be - BE_TRIGGER_R) >= 1e-9:
++                BE_TRIGGER_R = new_be
++                changed.append(f"BE_TRIGGER_R->{BE_TRIGGER_R:.2f}")
++
++        # 2) Large givebacks on winners → lock earlier
++        if giveback >= 0.60:
++            new_lock = max(0.60, LOCK_AT_R - NUDGE_LOCK_AT_STEP)
++            if abs(new_lock - LOCK_AT_R) >= 1e-9:
++                LOCK_AT_R = new_lock
++                changed.append(f"LOCK_AT_R->{LOCK_AT_R:.2f}")
++
++        # 3) Strategy reorder by expectancy (optional)
++        if STRAT_REORDER_ENABLE:
++            exp = {k: v.get("expR", -999) for k, v in stats.items() if k in ("BRRT", "ORB", "FVG")}
++            if exp:
++                order = [k for k, _ in sorted(exp.items(), key=lambda kv: kv[1], reverse=True)]
++                enabled = [s for s in STRATEGIES_ENABLED if s in order]
++                tail = [s for s in STRATEGIES_ENABLED if s not in order]
++                new_enabled = enabled + tail
++                if new_enabled != STRATEGIES_ENABLED:
++                    STRATEGIES_ENABLED[:] = new_enabled
++                    changed.append(f"STRAT_ORDER->{','.join(STRATEGIES_ENABLED)}")
++
++        if changed:
++            print("🧠 Adapt:", " | ".join(changed))
++
++        # Print false-positive fingerprints (human friendly)
++        fp = stats.get("fingerprints", {})
++        over = fp.get("overrep_flags", {})
++        med = fp.get("medians", {})
++        print(
++            "🔎 False-Positive clues:",
++            f"weak_atrΔ={over.get('weak_atr', 0.0):+.2f} "
++            f"weak_bodyΔ={over.get('weak_body', 0.0):+.2f} "
++            f"flat_trendΔ={over.get('flat_trend', 0.0):+.2f} | "
++            f"atr_rel med(loss-win)={med.get('atr_rel_delta_med', float('nan')):+.2f} "
++            f"body_rel med(loss-win)={med.get('body_rel_delta_med', float('nan')):+.2f}"
++        )
++    except Exception as e:
++        if DEBUG:
++            print(f"⚠️ adapt_parameters_from_stats error: {e}")
+@@
+-def derive_adaptive_knobs_from_last24h(trades_df: pd.DataFrame) -> dict:
++def derive_adaptive_knobs_from_last24h(trades_df: pd.DataFrame) -> dict:
+@@
+-    now = jh_now()
+-    since = now - timedelta(hours=24)
++    now = jh_now()
++    since = now - timedelta(hours=24)
+     d = trades_df.copy()
+-    d["timestamp"] = pd.to_datetime(d["timestamp"], errors="coerce")
+-    d = d[d["timestamp"] >= since]
++    # Make both sides tz-naive for valid comparison
++    d["timestamp"] = pd.to_datetime(d["timestamp"], errors="coerce")
++    d["timestamp"] = d["timestamp"].dt.tz_localize(None)
++    since_naive = since.replace(tzinfo=None)
++    d = d[d["timestamp"] >= since_naive]
+@@
+     return {
+         "strat_order": strat_order,
+         "session_bias": session_bias,
+         "be_trigger_delta": be_trigger_delta,
+         "lock_at_delta": lock_at_delta,
+         "preferred_bands": preferred_bands,
+     }
+@@
+-def main():
++def main():
++    # allow in-function assignment to these globals (24h adapt nudges)
++    global BE_TRIGGER_R, LOCK_AT_R
+     ensure_csv_header(LOG_FILE, EXPECTED_COLS)
+     ensure_csv_header(SIGNAL_LOG_FILE, SIGNAL_COLS)
+     ensure_csv_header(SNAPSHOT_FILE, SNAPSHOT_COLS)
+@@
+-                        if knobs.get("be_trigger_delta", 0.0) < 0:
+-                            BE_TRIGGER_R = max(0.25, BE_TRIGGER_R + knobs["be_trigger_delta"])
+-                            print(f"🪙 BE_TRIGGER_R nudged -> {BE_TRIGGER_R:.2f}")
+-                        if knobs.get("lock_at_delta", 0.0) < 0:
+-                            LOCK_AT_R = max(0.60, LOCK_AT_R + knobs["lock_at_delta"])
+-                            print(f"🧷 LOCK_AT_R nudged -> {LOCK_AT_R:.2f}")
++                        if knobs.get("be_trigger_delta", 0.0) < 0:
++                            BE_TRIGGER_R = max(0.25, BE_TRIGGER_R + knobs["be_trigger_delta"])
++                            print(f"🪙 BE_TRIGGER_R nudged -> {BE_TRIGGER_R:.2f}")
++                        if knobs.get("lock_at_delta", 0.0) < 0:
++                            LOCK_AT_R = max(0.60, LOCK_AT_R + knobs["lock_at_delta"])
++                            print(f"🧷 LOCK_AT_R nudged -> {LOCK_AT_R:.2f}")
